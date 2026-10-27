@@ -29,20 +29,7 @@ pipeline {
 
         stage('Preparar validaciones') {
             steps {
-                sh '''
-                    rm -rf .pipeline-work
-                    mkdir -p .pipeline-work/tests .pipeline-work/quality
-
-                    tar --exclude=.git \
-                        --exclude=.pipeline-work \
-                        --exclude=target \
-                        -cf - . | tar -xf - -C .pipeline-work/tests
-
-                    tar --exclude=.git \
-                        --exclude=.pipeline-work \
-                        --exclude=target \
-                        -cf - . | tar -xf - -C .pipeline-work/quality
-                '''
+                sh 'bash scripts/preparar-validaciones.sh'
             }
         }
 
@@ -61,7 +48,7 @@ pipeline {
                     steps {
                         dir('.pipeline-work/quality') {
                             echo 'Ejecutando Checkstyle, PMD y CPD...'
-                            sh 'mvn -B -ntp -DskipTests checkstyle:check pmd:check pmd:cpd-check'
+                            sh 'bash scripts/validar-calidad.sh'
                         }
                     }
                 }
