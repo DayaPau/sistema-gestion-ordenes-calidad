@@ -29,20 +29,7 @@ pipeline {
 
         stage('Preparar validaciones') {
             steps {
-                sh '''
-                    rm -rf .pipeline-work
-                    mkdir -p .pipeline-work/tests .pipeline-work/quality
-
-                    tar --exclude=.git \
-                        --exclude=.pipeline-work \
-                        --exclude=target \
-                        -cf - . | tar -xf - -C .pipeline-work/tests
-
-                    tar --exclude=.git \
-                        --exclude=.pipeline-work \
-                        --exclude=target \
-                        -cf - . | tar -xf - -C .pipeline-work/quality
-                '''
+                sh 'bash scripts/preparar-validaciones.sh'
             }
         }
 
@@ -61,7 +48,7 @@ pipeline {
                     steps {
                         dir('.pipeline-work/quality') {
                             echo 'Ejecutando Checkstyle, PMD y CPD...'
-                            sh 'mvn -B -ntp -DskipTests checkstyle:check pmd:check pmd:cpd-check'
+                            sh 'bash scripts/validar-calidad.sh'
                         }
                     }
                 }
@@ -96,22 +83,44 @@ pipeline {
         }
     }
 
+
     post {
         always {
             echo 'El pipeline ha finalizado.'
-
-            junit(
-                testResults: '.pipeline-work/tests/target/surefire-reports/*.xml',
-                allowEmptyResults: false
-            )
+    
+            junit allowEmptyResults: true,
+                  testResults: '.pipeline-work/tests/target/surefire-reports/*.xml'
         }
-
+    
         success {
             echo 'Pipeline ejecutado correctamente.'
+    
+            catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+                withCredentials([
+                    string(
+                        credentialsId: 'discord-webhook-url',
+                        variable: 'DISCORD_WEBHOOK'
+                    )
+                ]) {
+                    sh 'bash scripts/notificar-discord.sh SUCCESS'
+                }
+            }
         }
-
+    
         failure {
-            echo 'Pipeline fallido. Revisar Console Output.'
+            echo 'El pipeline ha fallado.'
+    
+            catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+                withCredentials([
+                    string(
+                        credentialsId: 'discord-webhook-url',
+                        variable: 'DISCORD_WEBHOOK'
+                    )
+                ]) {
+                    sh 'bash scripts/notificar-discord.sh FAILURE'
+                }
+            }
         }
     }
+
 }
