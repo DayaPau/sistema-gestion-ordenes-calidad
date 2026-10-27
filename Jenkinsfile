@@ -61,7 +61,7 @@ pipeline {
                     steps {
                         dir('.pipeline-work/quality') {
                             echo 'Ejecutando Checkstyle, PMD y CPD...'
-                            sh 'mvn -B -ntp -DskipTests checkstyle:check pmd:check pmd:cpd-check'
+                            sh 'bash scripts/validar-calidad.sh'
                         }
                     }
                 }
