@@ -7,22 +7,34 @@ pipeline {
         maven 'Maven-3.9'
     }
 
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
     stages {
-        stage('Checkout') {
+        stage('Preparacion') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/DayaPau/sistema-gestion-ordenes-calidad.git'
+                echo 'Preparando el proyecto...'
+
+                sh 'mvn -version'
+
+                sh 'mvn -B -ntp clean'
             }
         }
 
         stage('Build') {
             steps {
+                echo 'Compilando el proyecto...'
+
                 sh 'mvn -B -ntp -DskipTests compile'
             }
         }
 
         stage('Test y calidad') {
             steps {
+                echo 'Ejecutando pruebas y calidad...'
+
                 sh 'mvn -B -ntp verify'
             }
         }
@@ -49,7 +61,8 @@ pipeline {
         }
 
         failure {
-            echo 'El pipeline falló. Revisar Console Output.'
+            echo 'El pipeline fallo. Revisar Console Output.'
         }
     }
 }
+
