@@ -1,24 +1,41 @@
 
 version: 2.1
 
+# ==========================================
+# CONFIGURACION GENERAL
+# ==========================================
+
 executors:
   java17:
     docker:
       - image: cimg/openjdk:17.0
     working_directory: ~/project
 
+# ==========================================
+# COMANDOS REUTILIZABLES
+# ==========================================
+
 commands:
+
+  configurar_maven:
+    steps:
+      - run:
+          name: Configurar Maven Central
+          command: |
+            mkdir -p ~/.m2
+            cp .circleci/settings.xml ~/.m2/settings.xml
+
   restaurar_dependencias:
     steps:
       - restore_cache:
           keys:
-            - maven-v1-{{ checksum "pom.xml" }}
-            - maven-v1-
+            - maven-v2-{{ checksum "pom.xml" }}
+            - maven-v2-
 
   guardar_dependencias:
     steps:
       - save_cache:
-          key: maven-v1-{{ checksum "pom.xml" }}
+          key: maven-v2-{{ checksum "pom.xml" }}
           paths:
             - ~/.m2/repository
 
@@ -30,83 +47,164 @@ commands:
           command: |
             if [ -n "${DISCORD_WEBHOOK:-}" ]; then
               bash scripts/notificar-discord.sh FAILURE || true
+            else
+              echo "DISCORD_WEBHOOK no configurado."
             fi
 
-jobs:
-  build:
-    executor: java17
+  notificar_exito:
     steps:
-      - checkout
-      - restaurar_dependencias
-      - run:
-          name: Verificar entorno
-          command: mvn -version
-      - run:
-          name: Limpiar y compilar
-          command: mvn -B -ntp clean compile -DskipTests
-      - guardar_dependencias
-      - notificar_fallo
-
-  tests:
-    executor: java17
-    steps:
-      - checkout
-      - restaurar_dependencias
-      - run:
-          name: Preparar validaciones
-          command: bash scripts/preparar-validaciones.sh
-      - run:
-          name: Pruebas JUnit y cobertura JaCoCo
-          command: |
-            cd .pipeline-work/tests
-            mvn -B -ntp verify
-      - store_test_results:
-          path: .pipeline-work/tests/target/surefire-reports
-      - store_artifacts:
-          path: .pipeline-work/tests/target/site/jacoco
-          destination: cobertura-jacoco
-      - notificar_fallo
-
-  quality:
-    executor: java17
-    steps:
-      - checkout
-      - restaurar_dependencias
-      - run:
-          name: Preparar validaciones
-          command: bash scripts/preparar-validaciones.sh
-      - run:
-          name: Analizar calidad de codigo
-          command: |
-            cd .pipeline-work/quality
-            bash scripts/validar-calidad.sh
-      - notificar_fallo
-
-  package:
-    executor: java17
-    steps:
-      - checkout
-      - restaurar_dependencias
-      - run:
-          name: Empaquetar proyecto
-          command: mvn -B -ntp -DskipTests package
-      - store_artifacts:
-          path: target
-          destination: paquete
       - run:
           name: Notificar exito a Discord
           when: on_success
           command: |
             if [ -n "${DISCORD_WEBHOOK:-}" ]; then
               bash scripts/notificar-discord.sh SUCCESS || true
+            else
+              echo "DISCORD_WEBHOOK no configurado."
             fi
+
+# ==========================================
+# JOB 1: BUILD
+# ==========================================
+
+jobs:
+  build:
+    executor: java17
+    steps:
+      - checkout
+      - configurar_maven
+      - restaurar_dependencias
+
+      - run:
+          name: Verificar entorno Java y Maven
+          command: |
+            java -version
+            mvn -version
+
+      - run:
+          name: Limpiar y compilar proyecto
+          command: |
+            mvn -B -ntp clean compile -DskipTests
+
+      - guardar_dependencias
       - notificar_fallo
+
+# ==========================================
+# JOB 2: PRUEBAS Y COBERTURA
+# ==========================================
+
+  tests:
+    executor: java17
+    steps:
+      - checkout
+      - configurar_maven
+      - restaurar_dependencias
+
+      - run:
+          name: Preparar directorios de pruebas
+          command: |
+            bash scripts/preparar-validaciones.sh
+
+      - run:
+          name: Pruebas JUnit y cobertura JaCoCo
+          command: |
+            cd .pipeline-work/tests
+            mvn -B -ntp verify
+
+      - store_test_results:
+          path: .pipeline-work/tests/target/surefire-reports
+
+      - store_artifacts:
+          path: .pipeline-work/tests/target/site/jacoco
+          destination: cobertura-jacoco
+
+      - notificar_fallo
+
+# ==========================================
+# JOB 3: ANALISIS DE CALIDAD
+# ==========================================
+
+  quality:
+    executor: java17
+    steps:
+      - checkout
+      - configurar_maven
+      - restaurar_dependencias
+
+      - run:
+          name: Preparar directorios de calidad
+          command: |
+            bash scripts/preparar-validaciones.sh
+
+      - run:
+          name: Checkstyle, PMD y CPD
+          command: |
+            cd .pipeline-work/quality
+            bash scripts/validar-calidad.sh
+
+      - notificar_fallo
+
+# ==========================================
+# JOB 4: EMPAQUETADO
+# ==========================================
+
+  package:
+    executor: java17
+    steps:
+      - checkout
+      - configurar_maven
+      - restaurar_dependencias
+
+      - run:
+          name: Generar artefacto JAR
+          command: |
+            mvn -B -ntp -DskipTests package
+
+      - notificar_fallo
+
+# ==========================================
+# JOB 5: PUBLICACION
+# ==========================================
+
+  publish:
+    executor: java17
+    steps:
+      - checkout
+      - configurar_maven
+      - restaurar_dependencias
+
+      - run:
+          name: Generar JAR de rama estable
+          command: |
+            mvn -B -ntp -DskipTests package
+
+      - store_artifacts:
+          path: target
+          destination: artefactos-jar
+
+      - notificar_fallo
+
+# ==========================================
+# JOB 6: NOTIFICACION FINAL
+# ==========================================
+
+  notify_success:
+    executor: java17
+    steps:
+      - checkout
+      - notificar_exito
+
+# ==========================================
+# WORKFLOW CI/CD
+# ==========================================
 
 workflows:
   ci-cd:
     jobs:
+
       - build
 
+      # Validaciones paralelas
       - tests:
           requires:
             - build
@@ -115,6 +213,7 @@ workflows:
           requires:
             - build
 
+      # Empaquetar en main y develop
       - package:
           requires:
             - tests
@@ -122,5 +221,46 @@ workflows:
           filters:
             branches:
               only:
+                - main
+                - develop
+
+      # Publicar solo en main
+      - publish:
+          requires:
+            - package
+          filters:
+            branches:
+              only:
+                - main
+
+      # Exito en main
+      - notify_success:
+          name: notify_main
+          requires:
+            - publish
+          filters:
+            branches:
+              only:
+                - main
+
+      # Exito en develop
+      - notify_success:
+          name: notify_develop
+          requires:
+            - package
+          filters:
+            branches:
+              only:
+                - develop
+
+      # Exito en otras ramas
+      - notify_success:
+          name: notify_features
+          requires:
+            - tests
+            - quality
+          filters:
+            branches:
+              ignore:
                 - main
                 - develop
