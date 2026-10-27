@@ -14,7 +14,7 @@ pipeline {
     stages {
         stage('Preparacion') {
             steps {
-                echo 'Preparando el proyecto...'
+                echo "Rama actual: ${env.BRANCH_NAME}"
                 sh 'mvn -version'
                 sh 'mvn -B -ntp clean'
             }
@@ -30,6 +30,7 @@ pipeline {
         stage('Preparar validaciones') {
             steps {
                 sh '''
+                    rm -rf .pipeline-work
                     mkdir -p .pipeline-work/tests .pipeline-work/quality
 
                     tar --exclude=.git \
@@ -50,7 +51,7 @@ pipeline {
                 stage('Pruebas y cobertura') {
                     steps {
                         dir('.pipeline-work/tests') {
-                            echo 'Ejecutando pruebas unitarias y cobertura...'
+                            echo 'Ejecutando pruebas JUnit y cobertura JaCoCo...'
                             sh 'mvn -B -ntp verify'
                         }
                     }
@@ -68,9 +69,29 @@ pipeline {
         }
 
         stage('Empaquetado') {
+            when {
+                anyOf {
+                    branch 'develop'
+                    branch 'main'
+                }
+            }
             steps {
-                echo 'Generando el archivo JAR...'
+                echo 'Generando artefacto JAR...'
                 sh 'mvn -B -ntp -DskipTests package'
+            }
+        }
+
+        stage('Publicacion') {
+            when {
+                branch 'main'
+            }
+            steps {
+                echo 'Archivando artefacto de la rama estable...'
+                archiveArtifacts(
+                    artifacts: 'target/*.jar',
+                    allowEmptyArchive: false,
+                    fingerprint: true
+                )
             }
         }
     }
@@ -82,12 +103,6 @@ pipeline {
             junit(
                 testResults: '.pipeline-work/tests/target/surefire-reports/*.xml',
                 allowEmptyResults: false
-            )
-
-            archiveArtifacts(
-                artifacts: 'target/*.jar',
-                allowEmptyArchive: false,
-                fingerprint: true
             )
         }
 
