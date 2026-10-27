@@ -83,22 +83,44 @@ pipeline {
         }
     }
 
+
     post {
         always {
             echo 'El pipeline ha finalizado.'
-
-            junit(
-                testResults: '.pipeline-work/tests/target/surefire-reports/*.xml',
-                allowEmptyResults: false
-            )
+    
+            junit allowEmptyResults: true,
+                  testResults: '.pipeline-work/tests/target/surefire-reports/*.xml'
         }
-
+    
         success {
             echo 'Pipeline ejecutado correctamente.'
+    
+            catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+                withCredentials([
+                    string(
+                        credentialsId: 'discord-webhook-url',
+                        variable: 'DISCORD_WEBHOOK'
+                    )
+                ]) {
+                    sh 'bash scripts/notificar-discord.sh SUCCESS'
+                }
+            }
         }
-
+    
         failure {
-            echo 'Pipeline fallido. Revisar Console Output.'
+            echo 'El pipeline ha fallado.'
+    
+            catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+                withCredentials([
+                    string(
+                        credentialsId: 'discord-webhook-url',
+                        variable: 'DISCORD_WEBHOOK'
+                    )
+                ]) {
+                    sh 'bash scripts/notificar-discord.sh FAILURE'
+                }
+            }
         }
     }
+
 }
