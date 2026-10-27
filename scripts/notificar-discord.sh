@@ -10,49 +10,36 @@ BUILD="${BUILD_NUMBER:-N/A}"
 URL_BUILD="${BUILD_URL:-}"
 
 if [ -z "${DISCORD_WEBHOOK:-}" ]; then
-    echo "ERROR: No se configuró DISCORD_WEBHOOK"
+    echo "ERROR: Falta DISCORD_WEBHOOK"
     exit 1
 fi
 
 case "$ESTADO" in
     SUCCESS)
-        ICONO="✅"
         MENSAJE="Pipeline ejecutado correctamente"
         ;;
     FAILURE)
-        ICONO="❌"
         MENSAJE="El pipeline ha fallado"
         ;;
     *)
-        ICONO="ℹ️"
-        MENSAJE="Pipeline finalizado: $ESTADO"
+        MENSAJE="Pipeline finalizado"
         ;;
 esac
 
-export ICONO MENSAJE PROYECTO RAMA BUILD URL_BUILD
+# Generar el contenido del mensaje
+CONTENIDO="$MENSAJE
+Proyecto: $PROYECTO
+Rama: $RAMA
+Build: $BUILD
+Jenkins: $URL_BUILD"
 
-PAYLOAD=$(python3 - <<'PY'
-import json
-import os
-
-contenido = (
-    f"{os.environ['ICONO']} **{os.environ['MENSAJE']}**\n"
-    f"**Proyecto:** {os.environ['PROYECTO']}\n"
-    f"**Rama:** {os.environ['RAMA']}\n"
-    f"**Build:** #{os.environ['BUILD']}\n"
-    f"**Jenkins:** {os.environ['URL_BUILD']}"
-)
-
-print(json.dumps({"content": contenido}))
-PY
-)
-
+# curl codifica el contenido como campo de formulario;
+# Discord recibe un mensaje mediante payload_json.
 curl --fail --silent --show-error \
     --retry 2 \
     --connect-timeout 10 \
     --max-time 30 \
-    -H "Content-Type: application/json" \
-    --data "$PAYLOAD" \
+    --data-urlencode "payload_json={\"content\":\"$(printf '%s' "$CONTENIDO" | sed ':a;N;$!ba;s/\\/\\\\/g;s/"/\\"/g;s/\n/\\n/g')\"}" \
     "$DISCORD_WEBHOOK"
 
 echo "Notificación enviada a Discord."
