@@ -1,7 +1,12 @@
 
+
 #!/usr/bin/env bash
 set -euo pipefail
 set +x
+
+# ==========================================
+# DETECTAR PLATAFORMA CI/CD
+# ==========================================
 
 ESTADO="${1:-UNKNOWN}"
 
@@ -19,10 +24,18 @@ else
     URL_BUILD="${BUILD_URL:-}"
 fi
 
+# ==========================================
+# VALIDAR WEBHOOK
+# ==========================================
+
 if [ -z "${DISCORD_WEBHOOK:-}" ]; then
     echo "ERROR: Falta DISCORD_WEBHOOK"
     exit 1
 fi
+
+# ==========================================
+# IDENTIFICAR ESTADO
+# ==========================================
 
 case "$ESTADO" in
     SUCCESS)
@@ -36,6 +49,10 @@ case "$ESTADO" in
         ;;
 esac
 
+# ==========================================
+# CONSTRUIR MENSAJE
+# ==========================================
+
 CONTENIDO="$MENSAJE
 Plataforma: $PLATAFORMA
 Proyecto: $PROYECTO
@@ -43,15 +60,19 @@ Rama: $RAMA
 Build: $BUILD
 Ejecucion: $URL_BUILD"
 
-# Generar JSON de forma segura
-JSON=$(python3 -c 'import json,sys; print(json.dumps({"content":sys.stdin.read()}))' <<< "$CONTENIDO")
+# ==========================================
+# ENVIAR NOTIFICACION A DISCORD
+# Sin Python ni dependencias adicionales
+# ==========================================
+
+JSON_CONTENIDO=$(printf '%s' "$CONTENIDO" |
+    sed ':a;N;$!ba;s/\\/\\\\/g;s/"/\\"/g;s/\n/\\n/g')
 
 curl --fail --silent --show-error \
     --retry 2 \
     --connect-timeout 10 \
     --max-time 30 \
-    -H "Content-Type: application/json" \
-    -d "$JSON" \
+    --data-urlencode "payload_json={\"content\":\"$JSON_CONTENIDO\"}" \
     "$DISCORD_WEBHOOK"
 
 echo "Notificacion enviada a Discord."
