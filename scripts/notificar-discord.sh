@@ -4,10 +4,20 @@ set -euo pipefail
 set +x
 
 ESTADO="${1:-UNKNOWN}"
-PROYECTO="${JOB_NAME:-Pipeline Jenkins}"
-RAMA="${BRANCH_NAME:-desconocida}"
-BUILD="${BUILD_NUMBER:-N/A}"
-URL_BUILD="${BUILD_URL:-}"
+
+if [ -n "${CIRCLECI:-}" ]; then
+    PLATAFORMA="CircleCI"
+    PROYECTO="${CIRCLE_PROJECT_REPONAME:-Proyecto}"
+    RAMA="${CIRCLE_BRANCH:-desconocida}"
+    BUILD="${CIRCLE_BUILD_NUM:-N/A}"
+    URL_BUILD="${CIRCLE_BUILD_URL:-}"
+else
+    PLATAFORMA="Jenkins"
+    PROYECTO="${JOB_NAME:-Pipeline Jenkins}"
+    RAMA="${BRANCH_NAME:-desconocida}"
+    BUILD="${BUILD_NUMBER:-N/A}"
+    URL_BUILD="${BUILD_URL:-}"
+fi
 
 if [ -z "${DISCORD_WEBHOOK:-}" ]; then
     echo "ERROR: Falta DISCORD_WEBHOOK"
@@ -26,20 +36,22 @@ case "$ESTADO" in
         ;;
 esac
 
-# Generar el contenido del mensaje
 CONTENIDO="$MENSAJE
+Plataforma: $PLATAFORMA
 Proyecto: $PROYECTO
 Rama: $RAMA
 Build: $BUILD
-Jenkins: $URL_BUILD"
+Ejecucion: $URL_BUILD"
 
-# curl codifica el contenido como campo de formulario;
-# Discord recibe un mensaje mediante payload_json.
+# Generar JSON de forma segura
+JSON=$(python3 -c 'import json,sys; print(json.dumps({"content":sys.stdin.read()}))' <<< "$CONTENIDO")
+
 curl --fail --silent --show-error \
     --retry 2 \
     --connect-timeout 10 \
     --max-time 30 \
-    --data-urlencode "payload_json={\"content\":\"$(printf '%s' "$CONTENIDO" | sed ':a;N;$!ba;s/\\/\\\\/g;s/"/\\"/g;s/\n/\\n/g')\"}" \
+    -H "Content-Type: application/json" \
+    -d "$JSON" \
     "$DISCORD_WEBHOOK"
 
-echo "Notificación enviada a Discord."
+echo "Notificacion enviada a Discord."
